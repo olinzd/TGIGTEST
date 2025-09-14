@@ -1,4 +1,4 @@
-// КОНФИГУРАЦИЯ FIREBASE - ВАШИ ДАННЫЕ
+// КОНФИГУРАЦИЯ FIREBASE
 const firebaseConfig = {
     apiKey: "AIzaSyDmoAORpz-NhWQskyW_p9IwCKrClC419LQ",
     authDomain: "testtgid.firebaseapp.com",
@@ -9,9 +9,16 @@ const firebaseConfig = {
 };
 
 // Инициализация Firebase
-const app = firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-const auth = firebase.auth();
+let db, auth;
+
+try {
+    const app = firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    auth = firebase.auth();
+    console.log('✅ Firebase инициализирован');
+} catch (error) {
+    showError('Ошибка инициализации Firebase: ' + error.message);
+}
 
 // Инициализация Telegram Web App
 const tg = window.Telegram.WebApp;
@@ -21,232 +28,166 @@ const statusElement = document.getElementById('status');
 const saveBtn = document.getElementById('saveBtn');
 const refreshBtn = document.getElementById('refreshBtn');
 
-// Функция анонимной аутентификации в Firebase
+// Функции для отображения статуса
+function showLoading(message) {
+    statusElement.innerHTML = `
+        <div class="status-loading">
+            <div class="spinner"></div>
+            <p>${message}</p>
+        </div>
+    `;
+}
+
+function showSuccess(message) {
+    statusElement.innerHTML = `
+        <div class="status-success">
+            <h3>✅ Успех!</h3>
+            <p>${message}</p>
+        </div>
+    `;
+}
+
+function showError(message) {
+    statusElement.innerHTML = `
+        <div class="status-error">
+            <h3>❌ Ошибка</h3>
+            <p>${message}</p>
+            <p><small>Проверьте настройки Firebase</small></p>
+        </div>
+    `;
+}
+
+function showDebugInfo(info) {
+    statusElement.innerHTML += `
+        <div class="debug-info">
+            <h4>🔍 Информация для отладки:</h4>
+            <pre>${JSON.stringify(info, null, 2)}</pre>
+        </div>
+    `;
+}
+
+// Функция анонимной аутентификации
 async function authenticateAnonymously() {
+    showLoading('Аутентификация в Firebase...');
+    
     try {
-        console.log('Начинаем анонимную аутентификацию...');
         const userCredential = await auth.signInAnonymously();
-        console.log('✅ Аутентификация успешна. UID:', userCredential.user.uid);
         return userCredential.user;
     } catch (error) {
-        console.error('❌ Ошибка аутентификации:', error);
-        throw new Error('Не удалось выполнить аутентификацию: ' + error.message);
+        showError('Ошибка аутентификации: ' + error.message);
+        throw error;
     }
 }
 
 // Функция получения данных пользователя Telegram
 function getTelegramUserData() {
-    try {
-        const user = tg.initDataUnsafe.user;
-        
-        if (!user || !user.id) {
-            throw new Error('Данные пользователя Telegram не доступны');
-        }
-
-        return {
-            tg_id: user.id,
-            tg_username: user.username || 'не указан',
-            first_name: user.first_name || '',
-            last_name: user.last_name || '',
-            language_code: user.language_code || '',
-            is_premium: user.is_premium || false,
-            photo_url: user.photo_url || '',
-            is_bot: user.is_bot || false,
-            telegram_data: JSON.stringify(tg.initDataUnsafe),
-            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-            last_updated: new Date().toISOString()
-        };
-    } catch (error) {
-        console.error('❌ Ошибка получения данных Telegram:', error);
-        throw new Error('Не удалось получить данные пользователя: ' + error.message);
+    const user = tg.initDataUnsafe.user;
+    
+    if (!user || !user.id) {
+        showError('Данные пользователя Telegram не доступны');
+        throw new Error('No Telegram user data');
     }
+
+    return {
+        tg_id: user.id,
+        tg_username: user.username || 'не указан',
+        first_name: user.first_name || '',
+        last_name: user.last_name || '',
+        language_code: user.language_code || '',
+        is_premium: user.is_premium || false,
+        timestamp: new Date().toISOString()
+    };
 }
 
 // Функция сохранения данных в Firestore
 async function saveUserData(userData) {
+    showLoading('Сохранение в базу данных...');
+    
     try {
-        // Проверяем аутентификацию
         const currentUser = auth.currentUser;
         if (!currentUser) {
             throw new Error('Пользователь не аутентифицирован');
         }
 
-        // Добавляем UID аутентификации к данным
         const dataWithAuth = {
             ...userData,
             firebase_uid: currentUser.uid,
-            auth_timestamp: new Date().toISOString(),
-            app_version: '1.0.0'
+            auth_timestamp: new Date().toISOString()
         };
 
-        // Сохраняем в Firestore
         await db.collection('users').doc(userData.tg_id.toString()).set(dataWithAuth, { 
             merge: true 
         });
         
-        console.log('✅ Данные успешно сохранены в Firestore');
         return true;
-        
     } catch (error) {
-        console.error('❌ Ошибка сохранения в Firestore:', error);
-        throw new Error('Не удалось сохранить данные: ' + error.message);
+        showError('Ошибка сохранения: ' + error.message);
+        
+        // Показываем дополнительную информацию для отладки
+        showDebugInfo({
+            error: error.message,
+            userData: userData,
+            firebaseConfig: {
+                projectId: firebaseConfig.projectId,
+                authDomain: firebaseConfig.authDomain
+            },
+            timestamp: new Date().toISOString()
+        });
+        
+        throw error;
     }
-}
-
-// Функция обновления интерфейса
-function updateUI(userData, firebaseUser) {
-    statusElement.innerHTML = `
-        <div class="status-success">
-            <h3>✅ Данные успешно сохранены!</h3>
-            
-            <div class="user-data-item">
-                <span class="user-data-label">Telegram ID:</span>
-                <span class="user-data-value">${userData.tg_id}</span>
-            </div>
-            
-            <div class="user-data-item">
-                <span class="user-data-label">Username:</span>
-                <span class="user-data-value">@${userData.tg_username}</span>
-            </div>
-            
-            <div class="user-data-item">
-                <span class="user-data-label">Имя:</span>
-                <span class="user-data-value">${userData.first_name} ${userData.last_name}</span>
-            </div>
-            
-            <div class="user-data-item">
-                <span class="user-data-label">Firebase UID:</span>
-                <span class="user-data-value">${firebaseUser.uid}</span>
-            </div>
-            
-            <div class="user-data-item">
-                <span class="user-data-label">Premium:</span>
-                <span class="user-data-value">${userData.is_premium ? '✅ Да' : '❌ Нет'}</span>
-            </div>
-            
-            <div class="user-data-item">
-                <span class="user-data-label">Язык:</span>
-                <span class="user-data-value">${userData.language_code || 'не указан'}</span>
-            </div>
-            
-            <div class="user-data-item">
-                <span class="user-data-label">Время сохранения:</span>
-                <span class="user-data-value">${new Date().toLocaleString('ru-RU')}</span>
-            </div>
-        </div>
-    `;
-}
-
-// Функция обработки ошибок
-function handleError(error) {
-    console.error('❌ Критическая ошибка:', error);
-    
-    statusElement.innerHTML = `
-        <div class="status-error">
-            <h3>❌ Произошла ошибка</h3>
-            <p>${error.message}</p>
-            <p><small>Попробуйте перезагрузить приложение</small></p>
-            <button onclick="location.reload()" style="
-                margin-top: 15px;
-                padding: 10px 20px;
-                background: #dc3545;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                cursor: pointer;
-            ">🔄 Перезагрузить</button>
-        </div>
-    `;
-}
-
-// Функция показа уведомления в Telegram
-function showTelegramNotification(message, isSuccess = true) {
-    tg.showPopup({
-        title: isSuccess ? '✅ Успех' : '❌ Ошибка',
-        message: message,
-        buttons: [{ type: 'ok' }]
-    });
 }
 
 // Основная функция инициализации приложения
 async function initApp() {
     try {
-        console.log('🚀 Инициализация приложения...');
-        
         // Инициализация Telegram Web App
         tg.ready();
         tg.BackButton.hide();
         tg.expand();
-        tg.enableClosingConfirmation();
 
-        // Показываем загрузку
-        statusElement.innerHTML = '<div class="loading">🔐 Аутентификация...</div>';
+        // Проверяем инициализацию Firebase
+        if (!db || !auth) {
+            showError('Firebase не инициализирован');
+            return;
+        }
 
         // Аутентификация в Firebase
         const firebaseUser = await authenticateAnonymously();
         
         // Получаем данные пользователя Telegram
-        statusElement.innerHTML = '<div class="loading">📡 Получение данных Telegram...</div>';
         const userData = getTelegramUserData();
         
         // Сохраняем данные
-        statusElement.innerHTML = '<div class="loading">💾 Сохранение в базу данных...</div>';
         await saveUserData(userData);
         
-        // Обновляем интерфейс
-        updateUI(userData, firebaseUser);
-        
-        console.log('🎯 Приложение успешно инициализировано');
+        // Показываем успех
+        showSuccess(`
+            Данные успешно сохранены!<br>
+            ID: ${userData.tg_id}<br>
+            Username: @${userData.tg_username}<br>
+            Имя: ${userData.first_name} ${userData.last_name}
+        `);
         
     } catch (error) {
-        handleError(error);
+        console.error('Ошибка инициализации:', error);
     }
 }
 
-// Обработчик кнопки сохранения
+// Обработчики кнопок
 saveBtn.addEventListener('click', async () => {
     try {
-        tg.showPopup({
-            title: '⏳',
-            message: 'Обновляем данные...'
-        });
-
         const userData = getTelegramUserData();
         await saveUserData(userData);
-        
-        showTelegramNotification('Данные успешно обновлены в базе!');
-        
-        // Обновляем UI
-        const firebaseUser = auth.currentUser;
-        updateUI(userData, firebaseUser);
-        
+        tg.showPopup({ title: '✅ Успех', message: 'Данные обновлены' });
     } catch (error) {
-        showTelegramNotification('Ошибка при обновлении: ' + error.message, false);
+        tg.showPopup({ title: '❌ Ошибка', message: error.message });
     }
 });
 
-// Обработчик кнопки обновления
 refreshBtn.addEventListener('click', () => {
     location.reload();
 });
 
-// Обработчики состояния аутентификации
-auth.onAuthStateChanged((user) => {
-    if (user) {
-        console.log('👤 Пользователь аутентифицирован:', user.uid);
-    } else {
-        console.log('👤 Пользователь вышел из системы');
-    }
-});
-
-// Запуск приложения при загрузке
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('📄 DOM загружен, запускаем приложение...');
-    initApp();
-});
-
-// Обработчик ошибок
-window.addEventListener('error', (event) => {
-    console.error('🚨 Глобальная ошибка:', event.error);
-    handleError(event.error);
-});
+// Запуск приложения
+document.addEventListener('DOMContentLoaded', initApp);
