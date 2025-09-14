@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Mini App</title>
+    
+    <!-- Telegram Web App SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
+    <!-- Firebase imports (ОБНОВЛЕННЫЕ!) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <!-- ↑↑↑ ЭТОТ СТРОЧКУ ДОБАВИТЬ ↑↑↑ -->
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>📱 Telegram Mini App</h1>
+        <p>Ваши данные сохраняются в безопасную базу данных</p>
+        
+        <div id="status" class="status-container">
+            <div class="loading">Загрузка...</div>
+        </div>
+        
+        <div class="buttons">
+            <button id="saveBtn" class="btn-primary">💾 Сохранить мои данные</button>
+            <button id="refreshBtn" class="btn-secondary">🔄 Обновить</button>
+        </div>
+        
+        <div class="info">
+            <p>🔥 Powered by Firebase Firestore</p>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
