@@ -23,6 +23,113 @@ try {
 // Инициализация Telegram Web App
 const tg = window.Telegram.WebApp;
 
+async function authenticateAnonymously() {
+    showLoading('Аутентификация в Firebase...');
+    
+    try {
+        const userCredential = await auth.signInAnonymously();
+        return userCredential.user;
+    } catch (error) {
+        showError('Ошибка аутентификации: ' + error.message);
+        throw error;
+    }
+}
+
+// Функция получения данных пользователя Telegram
+function getTelegramUserData() {
+    const user = tg.initDataUnsafe.user;
+    
+    if (!user || !user.id) {
+        showError('Данные пользователя Telegram не доступны');
+        throw new Error('No Telegram user data');
+    }
+
+    return {
+        tg_id: user.id,
+        tg_username: user.username || 'не указан',
+        first_name: user.first_name || '',
+        last_name: user.last_name || '',
+        language_code: user.language_code || '',
+        is_premium: user.is_premium || false,
+        timestamp: new Date().toISOString()
+    };
+}
+
+// Функция сохранения данных в Firestore
+async function saveUserData(userData) {
+    showLoading('Сохранение в базу данных...');
+    
+    try {
+        const currentUser = auth.currentUser;
+        if (!currentUser) {
+            throw new Error('Пользователь не аутентифицирован');
+        }
+
+        const dataWithAuth = {
+            ...userData,
+            firebase_uid: currentUser.uid,
+            auth_timestamp: new Date().toISOString()
+        };
+
+        await db.collection('users').doc(userData.tg_id.toString()).set(dataWithAuth, { 
+            merge: true 
+        });
+        
+        return true;
+    } catch (error) {
+        showError('Ошибка сохранения: ' + error.message);
+        
+        // Показываем дополнительную информацию для отладки
+        showDebugInfo({
+            error: error.message,
+            userData: userData,
+            firebaseConfig: {
+                projectId: firebaseConfig.projectId,
+                authDomain: firebaseConfig.authDomain
+            },
+            timestamp: new Date().toISOString()
+        });
+        
+        throw error;
+    }
+}
+
+// Основная функция инициализации приложения
+async function initApp() {
+    try {
+        // Инициализация Telegram Web App
+        tg.ready();
+        tg.BackButton.hide();
+        tg.expand();
+
+        // Проверяем инициализацию Firebase
+        if (!db || !auth) {
+            showError('Firebase не инициализирован');
+            return;
+        }
+
+        // Аутентификация в Firebase
+        const firebaseUser = await authenticateAnonymously();
+        
+        // Получаем данные пользователя Telegram
+        const userData = getTelegramUserData();
+        
+        // Сохраняем данные
+        await saveUserData(userData);
+        
+        // Показываем успех
+        showSuccess(`
+            Данные успешно сохранены!<br>
+            ID: ${userData.tg_id}<br>
+            Username: @${userData.tg_username}<br>
+            Имя: ${userData.first_name} ${userData.last_name}
+        `);
+        
+    } catch (error) {
+        console.error('Ошибка инициализации:', error);
+    }
+}
+
 // Переменные для управления состоянием
 let currentWeekStart = getStartOfWeek(new Date());
 let employees = [];
