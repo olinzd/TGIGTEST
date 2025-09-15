@@ -85,6 +85,25 @@ function generateEmployeeColors(employeesList) {
     return colors;
 }
 
+// Получение уникальных ID сотрудников из текущей недели
+function getEmployeesInCurrentWeek() {
+    const weekRange = getWeekRange(currentWeekStart);
+    const startStr = weekRange.start.toISOString().split('T')[0];
+    const endStr = new Date(weekRange.end.getTime() + 86400000).toISOString().split('T')[0];
+    
+    // Получаем уникальные employeeId из смен текущей недели
+    const employeeIdsInWeek = new Set();
+    shifts.forEach(shift => {
+        const shiftDate = new Date(shift.date);
+        if (shiftDate >= weekRange.start && shiftDate <= weekRange.end) {
+            employeeIdsInWeek.add(shift.employeeId);
+        }
+    });
+    
+    // Фильтруем сотрудников только тех, кто есть в текущей неделе
+    return employees.filter(employee => employeeIdsInWeek.has(employee.id));
+}
+
 // Загрузка данных из Firestore
 async function loadEmployees() {
     try {
@@ -93,7 +112,6 @@ async function loadEmployees() {
             id: doc.data().id,
             name: doc.data().name
         }));
-        employeeColors = generateEmployeeColors(employees);
         return employees;
     } catch (error) {
         console.error('Ошибка загрузки сотрудников:', error);
@@ -127,6 +145,10 @@ function renderCalendar() {
     
     calendarElement.innerHTML = '';
     
+    // Получаем сотрудников только для текущей недели
+    const employeesInWeek = getEmployeesInCurrentWeek();
+    employeeColors = generateEmployeeColors(employeesInWeek);
+    
     // Создаем колонки для каждого дня недели
     for (let i = 0; i < 7; i++) {
         const currentDate = new Date(weekRange.start);
@@ -145,7 +167,6 @@ function renderCalendar() {
         
         dayColumn.appendChild(dayHeader);
         
-        // Остальной код без изменений...
         // Фильтруем смены для этого дня
         const dayShifts = shifts.filter(shift => {
             const shiftDate = new Date(shift.date);
@@ -169,16 +190,26 @@ function renderCalendar() {
         calendarElement.appendChild(dayColumn);
     }
     
-    // Добавляем легенду сотрудников
-    renderEmployeeLegend();
+    // Добавляем легенду только для сотрудников текущей недели
+    renderEmployeeLegend(employeesInWeek);
 }
 
-function renderEmployeeLegend() {
+function renderEmployeeLegend(employeesToShow) {
+    // Удаляем предыдущую легенду если есть
+    const existingLegend = document.querySelector('.employee-legend');
+    if (existingLegend) {
+        existingLegend.remove();
+    }
+    
+    if (employeesToShow.length === 0) {
+        return;
+    }
+    
     const legendContainer = document.createElement('div');
     legendContainer.className = 'employee-legend';
-    legendContainer.innerHTML = '<strong>Сотрудники:</strong>';
+    legendContainer.innerHTML = '<strong>Сотрудники на этой неделе:</strong>';
     
-    employees.forEach(employee => {
+    employeesToShow.forEach(employee => {
         const legendItem = document.createElement('div');
         legendItem.className = 'legend-item';
         legendItem.innerHTML = `
