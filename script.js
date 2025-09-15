@@ -23,118 +23,14 @@ try {
 // Инициализация Telegram Web App
 const tg = window.Telegram.WebApp;
 
-async function authenticateAnonymously() {
-    showLoading('Аутентификация в Firebase...');
-    
-    try {
-        const userCredential = await auth.signInAnonymously();
-        return userCredential.user;
-    } catch (error) {
-        showError('Ошибка аутентификации: ' + error.message);
-        throw error;
-    }
-}
-
-// Функция получения данных пользователя Telegram
-function getTelegramUserData() {
-    const user = tg.initDataUnsafe.user;
-    
-    if (!user || !user.id) {
-        showError('Данные пользователя Telegram не доступны');
-        throw new Error('No Telegram user data');
-    }
-
-    return {
-        tg_id: user.id,
-        tg_username: user.username || 'не указан',
-        first_name: user.first_name || '',
-        last_name: user.last_name || '',
-        language_code: user.language_code || '',
-        is_premium: user.is_premium || false,
-        timestamp: new Date().toISOString()
-    };
-}
-
-// Функция сохранения данных в Firestore
-async function saveUserData(userData) {
-    showLoading('Сохранение в базу данных...');
-    
-    try {
-        const currentUser = auth.currentUser;
-        if (!currentUser) {
-            throw new Error('Пользователь не аутентифицирован');
-        }
-
-        const dataWithAuth = {
-            ...userData,
-            firebase_uid: currentUser.uid,
-            auth_timestamp: new Date().toISOString()
-        };
-
-        await db.collection('users').doc(userData.tg_id.toString()).set(dataWithAuth, { 
-            merge: true 
-        });
-        
-        return true;
-    } catch (error) {
-        showError('Ошибка сохранения: ' + error.message);
-        
-        // Показываем дополнительную информацию для отладки
-        showDebugInfo({
-            error: error.message,
-            userData: userData,
-            firebaseConfig: {
-                projectId: firebaseConfig.projectId,
-                authDomain: firebaseConfig.authDomain
-            },
-            timestamp: new Date().toISOString()
-        });
-        
-        throw error;
-    }
-}
-
-// Основная функция инициализации приложения
-async function initApp() {
-    try {
-        // Инициализация Telegram Web App
-        tg.ready();
-        tg.BackButton.hide();
-        tg.expand();
-
-        // Проверяем инициализацию Firebase
-        if (!db || !auth) {
-            showError('Firebase не инициализирован');
-            return;
-        }
-
-        // Аутентификация в Firebase
-        const firebaseUser = await authenticateAnonymously();
-        
-        // Получаем данные пользователя Telegram
-        const userData = getTelegramUserData();
-        
-        // Сохраняем данные
-        await saveUserData(userData);
-        
-        // Показываем успех
-        showSuccess(`
-            Данные успешно сохранены!<br>
-            ID: ${userData.tg_id}<br>
-            Username: @${userData.tg_username}<br>
-            Имя: ${userData.first_name} ${userData.last_name}
-        `);
-        
-    } catch (error) {
-        console.error('Ошибка инициализации:', error);
-    }
-}
-
 // Переменные для управления состоянием
 let currentWeekStart = getStartOfWeek(new Date());
 let employees = [];
 let shifts = [];
 let employeeColors = {};
+let currentUser = null;
+let userEmployeeId = null;
+const ADMIN_TELEGRAM_ID = "5605512692";
 
 // Элементы DOM
 const calendarElement = document.getElementById('calendar');
@@ -144,6 +40,13 @@ const nextWeekBtn = document.getElementById('nextWeek');
 const shiftDetailsElement = document.getElementById('shiftDetails');
 const shiftInfoElement = document.getElementById('shiftInfo');
 const closeDetailsBtn = document.getElementById('closeDetails');
+const adminPanel = document.getElementById('adminPanel');
+const userFilter = document.getElementById('userFilter');
+const userShiftsInfo = document.getElementById('userShiftsInfo');
+const registerEmployeeBtn = document.getElementById('registerEmployee');
+const employeeIdInput = document.getElementById('employeeIdInput');
+const telegramIdInput = document.getElementById('telegramIdInput');
+const registrationResult = document.getElementById('registrationResult');
 
 // Функции для работы с датами
 function getStartOfWeek(date) {
@@ -176,6 +79,43 @@ function isToday(date) {
     return date.toDateString() === today.toDateString();
 }
 
+// Проверка прав администратора
+function isAdmin() {
+    return currentUser && currentUser.toString() === ADMIN_TELEGRAM_ID;
+}
+
+// Поиск employeeId по Telegram ID
+async function findEmployeeIdByTelegramId(telegramId) {
+    try {
+        const snapshot = await db.collection('user_mappings')
+            .where('telegramId', '==', telegramId.toString())
+            .get();
+        
+        if (!snapshot.empty) {
+            return snapshot.docs[0].data().employeeId;
+        }
+        return null;
+    } catch (error) {
+        console.error('Ошибка поиска employeeId:', error);
+        return null;
+    }
+}
+
+// Регистрация пользователя
+async function registerUser(employeeId, telegramId) {
+    try {
+        await db.collection('user_mappings').add({
+            employeeId: employeeId.toString(),
+            telegramId: telegramId.toString(),
+            registeredAt: new Date().toISOString()
+        });
+        return true;
+    } catch (error) {
+        console.error('Ошибка регистрации:', error);
+        return false;
+    }
+}
+
 // Генерация цветов для сотрудников
 function generateEmployeeColors(employeesList) {
     const colors = {};
@@ -195,8 +135,6 @@ function generateEmployeeColors(employeesList) {
 // Получение уникальных ID сотрудников из текущей недели
 function getEmployeesInCurrentWeek() {
     const weekRange = getWeekRange(currentWeekStart);
-    const startStr = weekRange.start.toISOString().split('T')[0];
-    const endStr = new Date(weekRange.end.getTime() + 86400000).toISOString().split('T')[0];
     
     // Получаем уникальные employeeId из смен текущей недели
     const employeeIdsInWeek = new Set();
@@ -282,8 +220,11 @@ function renderCalendar() {
         
         // Добавляем кружки смен
         dayShifts.forEach(shift => {
+            // Проверяем, является ли это смена текущего пользователя
+            const isUserShift = userEmployeeId && shift.employeeId === userEmployeeId;
+            
             const shiftCircle = document.createElement('div');
-            shiftCircle.className = 'shift-circle';
+            shiftCircle.className = `shift-circle ${isUserShift ? 'user-shift' : ''}`;
             shiftCircle.style.backgroundColor = employeeColors[shift.employeeId] || '#666';
             shiftCircle.title = `${shift.employeeName}: ${shift.hours}ч (${shift.shiftType})`;
             shiftCircle.textContent = shift.hours;
@@ -299,6 +240,25 @@ function renderCalendar() {
     
     // Добавляем легенду только для сотрудников текущей недели
     renderEmployeeLegend(employeesInWeek);
+    
+    // Показываем информацию о сменах пользователя
+    if (userEmployeeId) {
+        showUserShiftsInfo();
+    }
+}
+
+// Показать информацию о сменах пользователя
+function showUserShiftsInfo() {
+    const userShifts = shifts.filter(shift => shift.employeeId === userEmployeeId);
+    const totalHours = userShifts.reduce((sum, shift) => sum + parseInt(shift.hours), 0);
+    
+    userShiftsInfo.innerHTML = `
+        <div class="user-shifts-stats">
+            <span>Смен: ${userShifts.length}</span>
+            <span>Часов: ${totalHours}</span>
+        </div>
+    `;
+    userFilter.style.display = 'block';
 }
 
 function renderEmployeeLegend(employeesToShow) {
@@ -317,11 +277,12 @@ function renderEmployeeLegend(employeesToShow) {
     legendContainer.innerHTML = '<strong>Сотрудники на этой неделе:</strong>';
     
     employeesToShow.forEach(employee => {
+        const isCurrentUser = userEmployeeId === employee.id;
         const legendItem = document.createElement('div');
-        legendItem.className = 'legend-item';
+        legendItem.className = `legend-item ${isCurrentUser ? 'current-user' : ''}`;
         legendItem.innerHTML = `
             <span class="legend-color" style="background-color: ${employeeColors[employee.id]}"></span>
-            <span>${employee.name}</span>
+            <span>${employee.name} ${isCurrentUser ? '(Вы)' : ''}</span>
         `;
         legendContainer.appendChild(legendItem);
     });
@@ -330,10 +291,12 @@ function renderEmployeeLegend(employeesToShow) {
 }
 
 function showShiftDetails(shift) {
+    const isUserShift = userEmployeeId && shift.employeeId === userEmployeeId;
+    
     shiftInfoElement.innerHTML = `
-        <div class="shift-info-item">
+        <div class="shift-info-item ${isUserShift ? 'user-shift-info' : ''}">
             <span class="shift-info-label">Сотрудник:</span>
-            <span class="shift-info-value">${shift.employeeName}</span>
+            <span class="shift-info-value">${shift.employeeName} ${isUserShift ? '(Вы)' : ''}</span>
         </div>
         <div class="shift-info-item">
             <span class="shift-info-label">Дата:</span>
@@ -390,10 +353,28 @@ async function initApp() {
         tg.ready();
         tg.expand();
 
+        // Получаем Telegram ID пользователя
+        currentUser = tg.initDataUnsafe.user?.id;
+        console.log('Telegram User ID:', currentUser);
+
         // Проверяем инициализацию Firebase
         if (!db) {
             showError('Firebase не инициализирован');
             return;
+        }
+
+        // Проверяем права администратора
+        if (isAdmin()) {
+            adminPanel.style.display = 'block';
+            console.log('👑 Администратор вошел в систему');
+        }
+
+        // Ищем employeeId для текущего пользователя
+        if (currentUser) {
+            userEmployeeId = await findEmployeeIdByTelegramId(currentUser);
+            if (userEmployeeId) {
+                console.log('Найден employeeId:', userEmployeeId);
+            }
         }
 
         // Загружаем данные
@@ -410,6 +391,29 @@ prevWeekBtn.addEventListener('click', () => navigateWeek(-1));
 nextWeekBtn.addEventListener('click', () => navigateWeek(1));
 closeDetailsBtn.addEventListener('click', () => {
     shiftDetailsElement.style.display = 'none';
+});
+
+registerEmployeeBtn.addEventListener('click', async () => {
+    const employeeId = employeeIdInput.value;
+    const telegramId = telegramIdInput.value;
+    
+    if (!employeeId || !telegramId) {
+        registrationResult.innerHTML = '<div class="error">Заполните все поля</div>';
+        return;
+    }
+    
+    const success = await registerUser(employeeId, telegramId);
+    if (success) {
+        registrationResult.innerHTML = '<div class="success">Пользователь успешно зарегистрирован!</div>';
+        employeeIdInput.value = '';
+        telegramIdInput.value = '';
+    } else {
+        registrationResult.innerHTML = '<div class="error">Ошибка регистрации</div>';
+    }
+    
+    setTimeout(() => {
+        registrationResult.innerHTML = '';
+    }, 3000);
 });
 
 // Запуск приложения
