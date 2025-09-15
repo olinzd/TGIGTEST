@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Telegram Mini App</title>
+    <title>Telegram Mini App - Календарь смен</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
@@ -12,16 +12,22 @@
 </head>
 <body>
     <div class="container">
-        <h1>📱 Telegram Mini App</h1>
-        <p>Ваши данные сохраняются в безопасную базу данных</p>
+        <h1>📅 Календарь смен</h1>
         
-        <div id="status" class="status-container">
-            <div class="loading">Загрузка...</div>
+        <div class="week-navigation">
+            <button id="prevWeek" class="nav-btn">←</button>
+            <h2 id="weekTitle">Текущая неделя</h2>
+            <button id="nextWeek" class="nav-btn">→</button>
         </div>
         
-        <div class="buttons">
-            <button id="saveBtn" class="btn-primary">💾 Сохранить мои данные</button>
-            <button id="refreshBtn" class="btn-secondary">🔄 Обновить</button>
+        <div id="calendar" class="calendar">
+            <div class="loading">Загрузка календаря...</div>
+        </div>
+        
+        <div id="shiftDetails" class="shift-details" style="display: none;">
+            <h3>Детали смены</h3>
+            <div id="shiftInfo"></div>
+            <button id="closeDetails" class="btn-secondary">Закрыть</button>
         </div>
         
         <div class="info">
