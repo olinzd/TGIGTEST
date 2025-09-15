@@ -140,11 +140,12 @@ function renderCalendar() {
         dayHeader.className = 'day-header';
         dayHeader.innerHTML = `
             <div class="day-name">${currentDate.toLocaleDateString('ru-RU', { weekday: 'short' })}</div>
-            <div class="day-date">${formatDate(currentDate)}</div>
+            <div class="day-date">${currentDate.getDate()}</div>
         `;
         
         dayColumn.appendChild(dayHeader);
         
+        // Остальной код без изменений...
         // Фильтруем смены для этого дня
         const dayShifts = shifts.filter(shift => {
             const shiftDate = new Date(shift.date);
