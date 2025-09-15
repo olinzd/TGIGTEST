@@ -14,6 +14,23 @@
     <div class="container">
         <h1>📅 Календарь смен</h1>
         
+        <!-- Админская панель -->
+        <div id="adminPanel" class="admin-panel" style="display: none;">
+            <h3>⚙️ Панель администратора</h3>
+            <div class="admin-form">
+                <input type="number" id="employeeIdInput" placeholder="ID сотрудника" class="form-input">
+                <input type="number" id="telegramIdInput" placeholder="Telegram ID" class="form-input">
+                <button id="registerEmployee" class="btn-primary">Зарегистрировать</button>
+            </div>
+            <div id="registrationResult" class="registration-result"></div>
+        </div>
+        
+        <!-- Фильтр для пользователя -->
+        <div id="userFilter" class="user-filter" style="display: none;">
+            <h3>👤 Мои смены</h3>
+            <div id="userShiftsInfo"></div>
+        </div>
+        
         <div class="week-navigation">
             <button id="prevWeek" class="nav-btn">←</button>
             <h2 id="weekTitle">Текущая неделя</h2>
@@ -28,10 +45,6 @@
             <h3>Детали смены</h3>
             <div id="shiftInfo"></div>
             <button id="closeDetails" class="btn-secondary">Закрыть</button>
-        </div>
-        
-        <div class="info">
-            <p>🔥 Powered by Firebase Firestore</p>
         </div>
     </div>
     <script src="script.js"></script>
